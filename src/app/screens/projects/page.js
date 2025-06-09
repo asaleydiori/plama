@@ -1,165 +1,284 @@
 "use client";
-import React, { useState, useMemo } from 'react';
-import { Search, Plus, Edit3, Trash2, Archive, FolderOpen, Calendar, User } from 'lucide-react';
+
+import React, { useState, useMemo } from "react";
+import { Search, Plus, Edit3, Trash2, Archive, FolderOpen, Calendar, User, Share2 } from "lucide-react";
+import { Toaster, toast } from "sonner";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { z } from "zod";
+
+// Define Zod schema for project validation
+const projectSchema = z.object({
+  title: z.string().min(1, "Le titre est requis").max(100, "Le titre ne doit pas dépasser 100 caractères"),
+  description: z.string().min(1, "La description est requise").max(500, "La description ne doit pas dépasser 500 caractères"),
+  start_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "La date de début doit être au format YYYY-MM-DD").min(1, "La date de début est requise"),
+  end_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "La date de fin doit être au format YYYY-MM-DD").min(1, "La date de fin est requise"),
+  assign_to: z.string().min(1, "Le responsable est requis"),
+  email: z.string().email("Veuillez entrer une adresse email valide").optional(),
+});
 
 const ProjectsPage = () => {
-  // Données des projets (simulées)
-  const [projects] = useState([
+  // State management
+  const [projects, setProjects] = useState([
     {
-      id: 2,
-      title: "CVU31",
-      description: "6 batiments A et 8 B",
-      start_date: "2025-05-20",
-      end_date: "2025-05-27",
-      assign_to: 1,
-      created_at: null,
-      state: "in_progress"
+      id: "1",
+      title: "Projet Exemple 1",
+      description: "Description du projet exemple 1",
+      start_date: "2025-01-01",
+      end_date: "2025-06-01",
+      assign_to: "emp1",
     },
     {
-      id: 4,
-      title: "prj test",
-      description: "6 batiments",
-      start_date: "2025-05-08",
-      end_date: "2025-06-06",
-      assign_to: 0,
-      created_at: null,
-      state: "pending"
+      id: "2",
+      title: "Projet Exemple 2",
+      description: "Description du projet exemple 2",
+      start_date: "2025-02-01",
+      end_date: "2025-07-01",
+      assign_to: "emp2",
     },
-    {
-      id: 5,
-      title: "nnmd",
-      description: "ndnmdnmd",
-      start_date: "2025-05-07",
-      end_date: "2025-06-07",
-      assign_to: 1,
-      created_at: null,
-      state: "done"
-    },
-    {
-      id: 6,
-      title: "nejdj",
-      description: "ndnnd",
-      start_date: "2025-05-01",
-      end_date: "2025-05-27",
-      assign_to: 1,
-      created_at: null,
-      state: "pending"
-    },
-    {
-      id: 7,
-      title: "dnmnmd",
-      description: "nmnmd",
-      start_date: "2025-05-07",
-      end_date: "2025-06-05",
-      assign_to: 1,
-      created_at: null,
-      state: "pending"
-    },
-    {
-      id: 9,
-      title: "23esasa",
-      description: "sscsd",
-      start_date: "2025-05-13",
-      end_date: "2025-05-27",
-      assign_to: 2,
-      created_at: "2025-05-13",
-      state: "done"
-    },
-    {
-      id: 11,
-      title: "smmsms",
-      description: "s,m,msss",
-      start_date: "2025-05-01",
-      end_date: "2025-05-30",
-      assign_to: 3,
-      created_at: "2025-05-20",
-      state: null
-    },
-    {
-      id: 12,
-      title: "msama",
-      description: "sa amasa,am,ma",
-      start_date: "2025-05-07",
-      end_date: "2025-05-29",
-      assign_to: 0,
-      created_at: "2025-05-27",
-      state: null
-    }
   ]);
+  const [activeTab, setActiveTab] = useState("all");
+  const [searchTerm, setSearchTerm] = useState("");
+  const [employees, setEmployees] = useState([
+    { id: "emp1", nom: "Dupont", prenom: "Jean" },
+    { id: "emp2", nom: "Martin", prenom: "Sophie" },
+  ]);
+  const [selectedProject, setSelectedProject] = useState(null);
+  const [isViewOpen, setIsViewOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isShareOpen, setIsShareOpen] = useState(false);
+  const [isDeleteOpen, setIsDeleteOpen] = useState(false);
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isArchiveOpen, setIsArchiveOpen] = useState(false);
+  const [formData, setFormData] = useState({
+    id: "",
+    title: "",
+    description: "",
+    start_date: "",
+    end_date: "",
+    assign_to: "",
+    email: "",
+  });
+  const [errors, setErrors] = useState({});
 
-  const [activeTab, setActiveTab] = useState('all');
-  const [searchTerm, setSearchTerm] = useState('');
+  // Calculate status based on dates
+  const getStatus = (startDate, endDate) => {
+    const now = new Date();
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (now < start) return "pending"; // En attente
+    if (now > end) return "done"; // Terminé
+    return "in_progress"; // En cours
+  };
 
-  // Fonction pour obtenir le statut formaté
-  const getStatusInfo = (state) => {
+  // Get status info for display
+  const getStatusInfo = (project) => {
+    const state = project.state || getStatus(project.start_date, project.end_date);
     switch (state) {
-      case 'in_progress':
-        return { label: 'En cours', color: 'bg-primary/10 text-primary', dot: 'bg-primary' };
-      case 'done':
-        return { label: 'Terminé', color: 'bg-success/10 text-success', dot: 'bg-success' };
-      case 'pending':
-        return { label: 'En attente', color: 'bg-warning/10 text-warning', dot: 'bg-warning' };
+      case "in_progress":
+        return { label: "En cours", color: "bg-primary/10 text-primary", dot: "bg-primary" };
+      case "done":
+        return { label: "Terminé", color: "bg-success/10 text-success", dot: "bg-success" };
+      case "pending":
+        return { label: "En attente", color: "bg-warning/10 text-warning", dot: "bg-warning" };
       default:
-        return { label: 'Non défini', color: 'bg-muted/50 text-muted-foreground', dot: 'bg-muted-foreground' };
+        return { label: "Non défini", color: "bg-muted/50 text-muted-foreground", dot: "bg-muted-foreground" };
     }
   };
 
-  // Fonction pour formater les dates
+  // Format dates
   const formatDate = (dateString) => {
-    if (!dateString) return 'Non définie';
-    return new Date(dateString).toLocaleDateString('fr-FR');
+    if (!dateString) return "Non définie";
+    return new Date(dateString).toLocaleDateString("fr-FR");
   };
 
-  // Filtrage des projets
-  const filteredProjects = useMemo(() => {
-    let filtered = projects;
+  // Validate form data
+  const validateForm = (data, isSharing = false) => {
+    const schema = isSharing ? projectSchema.pick({ email: true }) : projectSchema.omit({ email: true });
+    const result = schema.safeParse(data);
+    if (!result.success) {
+      const fieldErrors = {};
+      result.error.errors.forEach((err) => {
+        fieldErrors[err.path[0]] = err.message;
+      });
+      setErrors(fieldErrors);
+      return false;
+    }
+    setErrors({});
+    return true;
+  };
 
-    // Filtrage par tab
-    if (activeTab !== 'all') {
-      filtered = filtered.filter(project => project.state === activeTab);
+  // Add project (client-side only)
+  const handleAddProject = () => {
+    const projectData = {
+      title: formData.title,
+      description: formData.description,
+      start_date: formData.start_date,
+      end_date: formData.end_date,
+      assign_to: formData.assign_to,
+    };
+    if (!validateForm(projectData)) {
+      toast.error("Veuillez corriger les erreurs dans le formulaire");
+      return;
+    }
+    const newProject = {
+      id: `${projects.length + 1}`,
+      ...projectData,
+    };
+    setProjects([...projects, newProject]);
+    toast.success("Projet ajouté avec succès");
+    setFormData({ id: "", title: "", description: "", start_date: "", end_date: "", assign_to: "", email: "" });
+    setIsAddOpen(false);
+  };
+
+  // Edit project (client-side only)
+  const handleEditProject = () => {
+    const projectData = {
+      id: formData.id,
+      title: formData.title,
+      description: formData.description,
+      start_date: formData.start_date,
+      end_date: formData.end_date,
+      assign_to: formData.assign_to,
+    };
+    if (!validateForm(projectData)) {
+      toast.error("Veuillez corriger les erreurs dans le formulaire");
+      return;
+    }
+    setProjects(
+      projects.map((project) =>
+        project.id === formData.id ? { ...project, ...projectData } : project
+      )
+    );
+    toast.success("Projet modifié avec succès");
+    setIsEditOpen(false);
+    setFormData({ id: "", title: "", description: "", start_date: "", end_date: "", assign_to: "", email: "" });
+    setSelectedProject(null);
+  };
+
+  // Share project (client-side only, simulated)
+  const handleShareProject = () => {
+    if (!validateForm({ email: formData.email }, true)) {
+      toast.error("Veuillez corriger les erreurs dans le formulaire");
+      return;
+    }
+    toast.success(`Projet partagé avec ${formData.email}`);
+    setIsShareOpen(false);
+    setFormData((prev) => ({ ...prev, email: "" }));
+    setSelectedProject(null);
+  };
+
+  // Delete project (client-side only)
+  const handleDeleteProject = () => {
+    setProjects(projects.filter((project) => project.id !== selectedProject.id));
+    toast.success("Projet supprimé avec succès");
+    setIsDeleteOpen(false);
+    setSelectedProject(null);
+  };
+
+  // Archive project (client-side only)
+  const handleArchiveProject = () => {
+    setProjects(
+      projects.map((project) =>
+        project.id === selectedProject.id ? { ...project, state: "archived" } : project
+      )
+    );
+    toast.success("Projet archivé avec succès");
+    setIsArchiveOpen(false);
+    setSelectedProject(null);
+  };
+
+  // Open view modal
+  const handleOpen = (project) => {
+    setSelectedProject(project);
+    setIsViewOpen(true);
+  };
+
+  // Open edit modal
+  const openEditModal = (project) => {
+    setSelectedProject(project);
+    setFormData({
+      id: project.id,
+      title: project.title,
+      description: project.description,
+      start_date: project.start_date || "",
+      end_date: project.end_date || "",
+      assign_to: project.assign_to || "",
+      email: "",
+    });
+    setErrors({});
+    setIsEditOpen(true);
+  };
+
+  // Open share modal
+  const openShareModal = (project) => {
+    setSelectedProject(project);
+    setFormData({ id: project.id, title: "", description: "", start_date: "", end_date: "", assign_to: "", email: "" });
+    setErrors({});
+    setIsShareOpen(true);
+  };
+
+  // Open delete modal
+  const openDeleteModal = (project) => {
+    setSelectedProject(project);
+    setIsDeleteOpen(true);
+  };
+
+  // Open archive modal
+  const openArchiveModal = (project) => {
+    setSelectedProject(project);
+    setIsArchiveOpen(true);
+  };
+
+  // Filtered projects
+  const filteredProjects = useMemo(() => {
+    let filtered = projects.map((project) => ({
+      ...project,
+      state: project.state || getStatus(project.start_date, project.end_date),
+    }));
+
+    // Filter by tab
+    if (activeTab !== "all") {
+      filtered = filtered.filter((project) => project.state === activeTab);
     }
 
-    // Filtrage par recherche
+    // Filter by search
     if (searchTerm) {
-      filtered = filtered.filter(project =>
-        project.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        project.description.toLowerCase().includes(searchTerm.toLowerCase())
+      filtered = filtered.filter(
+        (project) =>
+          project.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          project.description.toLowerCase().includes(searchTerm.toLowerCase())
       );
     }
 
     return filtered;
   }, [projects, activeTab, searchTerm]);
 
-  // Gestion des actions
-  const handleEdit = (projectId) => {
-    console.log('Éditer le projet:', projectId);
-  };
-
-  const handleDelete = (projectId) => {
-    console.log('Supprimer le projet:', projectId);
-  };
-
-  const handleArchive = (projectId) => {
-    console.log('Archiver le projet:', projectId);
-  };
-
-  const handleOpen = (projectId) => {
-    console.log('Ouvrir le projet:', projectId);
-  };
-
-  const handleNewProject = () => {
-    console.log('Nouveau projet');
-  };
-
   const tabs = [
-    { key: 'all', label: 'Tous', count: projects.length },
-    { key: 'in_progress', label: 'En cours', count: projects.filter(p => p.state === 'in_progress').length },
-    { key: 'done', label: 'Terminés', count: projects.filter(p => p.state === 'done').length },
-    { key: 'pending', label: 'En attente', count: projects.filter(p => p.state === 'pending').length }
+    { key: "all", label: "Tous", count: projects.length },
+    {
+      key: "in_progress",
+      label: "En cours",
+      count: projects.filter((p) => (p.state || getStatus(p.start_date, p.end_date)) === "in_progress").length,
+    },
+    {
+      key: "done",
+      label: "Terminés",
+      count: projects.filter((p) => (p.state || getStatus(p.start_date, p.end_date)) === "done").length,
+    },
+    {
+      key: "pending",
+      label: "En attente",
+      count: projects.filter((p) => (p.state || getStatus(p.start_date, p.end_date)) === "pending").length,
+    },
   ];
 
   return (
-    <div className="min-h-screen bg-background p-6 min-h-screen bg-gray-100 bg-background  md:ml-64 lg:ml-64 xl:ml-64">
+    <div className="min-h-screen bg-background ml-64 p-6">
+      <Toaster />
       <div className="max-w-7xl mx-auto">
         {/* En-tête */}
         <div className="mb-8">
@@ -182,13 +301,98 @@ const ProjectsPage = () => {
           </div>
 
           {/* Bouton nouveau projet */}
-          <button
-            onClick={handleNewProject}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Nouveau projet
-          </button>
+          <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+            <DialogTrigger asChild>
+              <button className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
+                <Plus className="w-4 h-4" />
+                Nouveau projet
+              </button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Ajouter un Projet</DialogTitle>
+                <DialogDescription>Remplissez les détails du nouveau projet.</DialogDescription>
+              </DialogHeader>
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="title" className="text-right">Titre</Label>
+                  <div className="col-span-3">
+                    <Input
+                      id="title"
+                      value={formData.title}
+                      onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                      className={errors.title ? "border-red-500" : ""}
+                    />
+                    {errors.title && <p className="text-red-500 text-sm mt-1">{errors.title}</p>}
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="description" className="text-right">Description</Label>
+                  <div className="col-span-3">
+                    <Input
+                      id="description"
+                      value={formData.description}
+                      onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                      className={errors.description ? "border-red-500" : ""}
+                    />
+                    {errors.description && <p className="text-red-500 text-sm mt-1">{errors.description}</p>}
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="start_date" className="text-right">Date de début</Label>
+                  <div className="col-span-3">
+                    <Input
+                      id="start_date"
+                      type="date"
+                      value={formData.start_date}
+                      onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                      className={errors.start_date ? "border-red-500" : ""}
+                    />
+                    {errors.start_date && <p className="text-red-500 text-sm mt-1">{errors.start_date}</p>}
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="end_date" className="text-right">Date de fin</Label>
+                  <div className="col-span-3">
+                    <Input
+                      id="end_date"
+                      type="date"
+                      value={formData.end_date}
+                      onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                      className={errors.end_date ? "border-red-500" : ""}
+                    />
+                    {errors.end_date && <p className="text-red-500 text-sm mt-1">{errors.end_date}</p>}
+                  </div>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label htmlFor="assign_to" className="text-right">Responsable</Label>
+                  <div className="col-span-3">
+                    <Select
+                      value={formData.assign_to}
+                      onValueChange={(value) => setFormData({ ...formData, assign_to: value })}
+                    >
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Responsable" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {employees.map((employee) => (
+                          <SelectItem key={employee.id} value={employee.id}>
+                            {employee.nom} {employee.prenom}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {errors.assign_to && <p className="text-red-500 text-sm mt-1">{errors.assign_to}</p>}
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button onClick={handleAddProject} className="bg-primary hover:bg-primary/90">
+                  Ajouter
+                </Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </div>
 
         {/* Onglets */}
@@ -201,8 +405,8 @@ const ProjectsPage = () => {
                   onClick={() => setActiveTab(tab.key)}
                   className={`py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
                     activeTab === tab.key
-                      ? 'border-primary text-primary'
-                      : 'border-transparent text-muted-foreground hover:text-foreground hover:border-muted'
+                      ? "border-primary text-primary"
+                      : "border-transparent text-muted-foreground hover:text-foreground hover:border-muted"
                   }`}
                 >
                   {tab.label}
@@ -218,9 +422,10 @@ const ProjectsPage = () => {
         {/* Grille des projets */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {filteredProjects.map((project) => {
-            const statusInfo = getStatusInfo(project.state);
+            const statusInfo = getStatusInfo(project);
+            const assignedEmployee = employees.find((emp) => emp.id === project.assign_to);
             return (
-              <div key={project.id} className="bg-Color rounded-lg shadow-sm border border-border hover:shadow-md transition-shadow">
+              <div key={project.id} className="bg-card rounded-lg shadow-sm border border-border hover:shadow-md transition-shadow">
                 {/* En-tête de la carte */}
                 <div className="p-6 pb-4">
                   <div className="flex items-start justify-between mb-3">
@@ -232,18 +437,22 @@ const ProjectsPage = () => {
                       </span>
                     </div>
                   </div>
-                  
+
                   <p className="text-muted-foreground text-sm mb-4 line-clamp-2">{project.description}</p>
-                  
+
                   {/* Informations du projet */}
                   <div className="space-y-2 text-sm text-muted-foreground">
                     <div className="flex items-center gap-2">
                       <Calendar className="w-4 h-4" />
-                      <span>{formatDate(project.start_date)} - {formatDate(project.end_date)}</span>
+                      <span>
+                        {formatDate(project.start_date)} - {formatDate(project.end_date)}
+                      </span>
                     </div>
                     <div className="flex items-center gap-2">
                       <User className="w-4 h-4" />
-                      <span>Assigné à: {project.assign_to || 'Non assigné'}</span>
+                      <span>
+                        Assigné à: {assignedEmployee ? `${assignedEmployee.nom} ${assignedEmployee.prenom}` : "Non assigné"}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -252,30 +461,37 @@ const ProjectsPage = () => {
                 <div className="px-6 py-4 border-t border-border bg-muted/50 rounded-b-lg">
                   <div className="flex items-center justify-between">
                     <button
-                      onClick={() => handleOpen(project.id)}
+                      onClick={() => handleOpen(project)}
                       className="bg-primary hover:bg-primary/90 text-primary-foreground px-3 py-1.5 rounded text-sm font-medium transition-colors flex items-center gap-1"
                     >
                       <FolderOpen className="w-3 h-3" />
                       Ouvrir
                     </button>
-                    
+
                     <div className="flex items-center gap-1">
                       <button
-                        onClick={() => handleEdit(project.id)}
+                        onClick={() => openEditModal(project)}
                         className="p-1.5 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded transition-colors"
                         title="Éditer"
                       >
                         <Edit3 className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleArchive(project.id)}
+                        onClick={() => openShareModal(project)}
+                        className="p-1.5 text-muted-foreground hover:text-blue-500 hover:bg-blue-500/10 rounded transition-colors"
+                        title="Partager"
+                      >
+                        <Share2 className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => openArchiveModal(project)}
                         className="p-1.5 text-muted-foreground hover:text-warning hover:bg-warning/10 rounded transition-colors"
                         title="Archiver"
                       >
                         <Archive className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => handleDelete(project.id)}
+                        onClick={() => openDeleteModal(project)}
                         className="p-1.5 text-muted-foreground hover:text-destructive hover:bg-destructive/10 rounded transition-colors"
                         title="Supprimer"
                       >
@@ -297,11 +513,11 @@ const ProjectsPage = () => {
             </div>
             <h3 className="text-lg font-medium text-foreground mb-2">Aucun projet trouvé</h3>
             <p className="text-muted-foreground mb-4">
-              {searchTerm ? 'Aucun projet ne correspond à votre recherche.' : 'Aucun projet dans cette catégorie.'}
+              {searchTerm ? "Aucun projet ne correspond à votre recherche." : "Aucun projet dans cette catégorie."}
             </p>
             {!searchTerm && (
               <button
-                onClick={handleNewProject}
+                onClick={() => setIsAddOpen(true)}
                 className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg inline-flex items-center gap-2"
               >
                 <Plus className="w-4 h-4" />
@@ -310,6 +526,210 @@ const ProjectsPage = () => {
             )}
           </div>
         )}
+
+        {/* View Dialog */}
+        <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Détails du Projet</DialogTitle>
+              <DialogDescription>Informations complètes sur le projet sélectionné.</DialogDescription>
+            </DialogHeader>
+            {selectedProject && (
+              <div className="grid gap-4 py-4">
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right font-bold">ID</Label>
+                  <span className="col-span-3">{selectedProject.id}</span>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right font-bold">Titre</Label>
+                  <span className="col-span-3">{selectedProject.title}</span>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right font-bold">Description</Label>
+                  <span className="col-span-3">{selectedProject.description}</span>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right font-bold">Responsable</Label>
+                  <span className="col-span-3">
+                    {employees.find((emp) => emp.id === selectedProject.assign_to)?.nom || "N/A"}{" "}
+                    {employees.find((emp) => emp.id === selectedProject.assign_to)?.prenom || ""}
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right font-bold">Date de début</Label>
+                  <span className="col-span-3">{formatDate(selectedProject.start_date)}</span>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right font-bold">Date de fin</Label>
+                  <span className="col-span-3">{formatDate(selectedProject.end_date)}</span>
+                </div>
+                <div className="grid grid-cols-4 items-center gap-4">
+                  <Label className="text-right font-bold">Statut</Label>
+                  <span className="col-span-3">{getStatusInfo(selectedProject).label}</span>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button onClick={() => setIsViewOpen(false)} className="bg-primary hover:bg-primary/90">
+                Fermer
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Dialog */}
+        <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Modifier le Projet</DialogTitle>
+              <DialogDescription>Mettez à jour les détails du projet.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-title" className="text-right">Titre</Label>
+                <div className="col-span-3">
+                  <Input
+                    id="edit-title"
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    className={errors.title ? "border-red-500" : ""}
+                  />
+                  {errors.title && <p className="text-red-500 text-sm mt-1">{errors.title}</p>}
+                </div>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-description" className="text-right">Description</Label>
+                <div className="col-span-3">
+                  <Input
+                    id="edit-description"
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    className={errors.description ? "border-red-500" : ""}
+                  />
+                  {errors.description && <p className="text-red-500 text-sm mt-1">{errors.description}</p>}
+                </div>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-start_date" className="text-right">Date de début</Label>
+                <div className="col-span-3">
+                  <Input
+                    id="edit-start_date"
+                    type="date"
+                    value={formData.start_date}
+                    onChange={(e) => setFormData({ ...formData, start_date: e.target.value })}
+                    className={errors.start_date ? "border-red-500" : ""}
+                  />
+                  {errors.start_date && <p className="text-red-500 text-sm mt-1">{errors.start_date}</p>}
+                </div>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-end_date" className="text-right">Date de fin</Label>
+                <div className="col-span-3">
+                  <Input
+                    id="edit-end_date"
+                    type="date"
+                    value={formData.end_date}
+                    onChange={(e) => setFormData({ ...formData, end_date: e.target.value })}
+                    className={errors.end_date ? "border-red-500" : ""}
+                  />
+                  {errors.end_date && <p className="text-red-500 text-sm mt-1">{errors.end_date}</p>}
+                </div>
+              </div>
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="edit-assign_to" className="text-right">Responsable</Label>
+                <div className="col-span-3">
+                  <Select
+                    value={formData.assign_to}
+                    onValueChange={(value) => setFormData({ ...formData, assign_to: value })}
+                  >
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Responsable" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {employees.map((employee) => (
+                        <SelectItem key={employee.id} value={employee.id}>
+                          {employee.nom} {employee.prenom}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {errors.assign_to && <p className="text-red-500 text-sm mt-1">{errors.assign_to}</p>}
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handleEditProject} className="bg-primary hover:bg-primary/90">
+                Enregistrer
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Share Dialog */}
+        <Dialog open={isShareOpen} onOpenChange={setIsShareOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Invitez</DialogTitle>
+              <DialogDescription>Ceci lui donnera un accès total à ce projet.</DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-4 py-4">
+              <div className="grid grid-cols-4 items-center gap-4">
+                <Label htmlFor="share-email" className="text-right">Email</Label>
+                <div className="col-span-3">
+                  <Input
+                    id="share-email"
+                    type="email"
+                    value={formData.email}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    className={errors.email ? "border-red-500" : ""}
+                  />
+                  {errors.email && <p className="text-red-500 text-sm mt-1">{errors.email}</p>}
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button onClick={handleShareProject} className="bg-primary hover:bg-primary/90">
+                Partager
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Delete Dialog */}
+        <Dialog open={isDeleteOpen} onOpenChange={setIsDeleteOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Confirmer la Suppression</DialogTitle>
+              <DialogDescription>Êtes-vous sûr de vouloir supprimer ce projet ? Cette action est irréversible.</DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsDeleteOpen(false)} className="border-border text-foreground">
+                Annuler
+              </Button>
+              <Button onClick={handleDeleteProject} className="bg-destructive hover:bg-destructive/90 text-destructive-foreground">
+                Supprimer
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Archive Dialog */}
+        <Dialog open={isArchiveOpen} onOpenChange={setIsArchiveOpen}>
+          <DialogContent className="sm:max-w-[425px]">
+            <DialogHeader>
+              <DialogTitle>Confirmer l'Archivage</DialogTitle>
+              <DialogDescription>Êtes-vous sûr de vouloir archiver ce projet ?</DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsArchiveOpen(false)} className="border-border text-foreground">
+                Annuler
+              </Button>
+              <Button onClick={handleArchiveProject} className="bg-warning hover:bg-warning/90 text-warning-foreground">
+                Archiver
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

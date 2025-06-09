@@ -212,12 +212,12 @@ export default function Materiels() {
         <Toaster />
         {/* En-tête */}
         <div className="ml-64 fixed top-0 left-0 right-0 bg-background text-white p-4 shadow-md flex justify-between items-center z-10">
-          <h1 className="text-2xl font-bold">Gestion des Matériels</h1>
+          <h1 className="text-2xl font-bold tex-primary-foreground">Gestion des Matériels</h1>
           <div className="flex items-center gap-2">
             <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
               <DialogTrigger asChild>
                 <Button
-                  className="bg-background hover:bg-foreground/90 text-primary-foreground px-4 py-2 rounded-lg flex items-center gap-2"
+                  className="bg-primary hover:bg-primary/90 text-primary-foreground px-4 py-2 rounded-lg flex items-center gap-2"
                   aria-label="Ajouter un nouveau matériel"
                 >
                   <Plus className="w-4 h-4" />
